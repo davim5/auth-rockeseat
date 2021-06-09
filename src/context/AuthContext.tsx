@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useState } from "react";
 import { api } from "../services/api";
 import Router from "next/router";
+import { setCookie } from "nookies";
 
 type User = {
     email: string;
@@ -43,6 +44,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
             // sessionStorage -> só durante durante a sessão
             // localStorage -> Backend não tem acesso
             // cookies -> Mil maravilhas
+
+            setCookie(undefined, 'authrocket.token', token,{
+                maxAge: 60 * 60 * 24 * 30,
+                path: '/',
+            });
+
+            setCookie(undefined, 'authrocket.refreshToken', refreshToken, {
+                maxAge: 60 * 60 * 24 * 30,
+                path: '/',
+            });
 
             setUser({
                 email,
