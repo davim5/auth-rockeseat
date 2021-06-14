@@ -2,6 +2,8 @@ import axios, {AxiosError} from 'axios';
 import { parseCookies, setCookie } from 'nookies';
 
 let cookies = parseCookies();
+let isRefreshing = false;
+let failedRequestsQueue: { onSuccess: (token: string) => void; onFailure: (err: AxiosError<any>) => void; }[] = [];
 
 export const api = axios.create({
     baseURL: 'http://localhost:3333',
@@ -20,22 +22,49 @@ api.interceptors.response.use(response => {
 
             const { 'authrocket.refreshToken': refreshToken } = cookies;
 
-            api.post('/refresh', {
-                refreshToken,
-            }).then( response => {
-                const { token } = response.data;
+            const originalConfig = error.config;
 
-                setCookie(undefined, 'authrocket.token', token,{
-                    maxAge: 60 * 60 * 24 * 30,
-                    path: '/',
-                });
+            if(!isRefreshing){
+                isRefreshing = true;
+
+                api.post('/refresh', {
+                    refreshToken,
+                }).then( response => {
+                    const { token } = response.data;
     
-                setCookie(undefined, 'authrocket.refreshToken', response.data.refreshToken, {
-                    maxAge: 60 * 60 * 24 * 30,
-                    path: '/',
-                });
+                    setCookie(undefined, 'authrocket.token', token,{
+                        maxAge: 60 * 60 * 24 * 30,
+                        path: '/',
+                    });
+        
+                    setCookie(undefined, 'authrocket.refreshToken', response.data.refreshToken, {
+                        maxAge: 60 * 60 * 24 * 30,
+                        path: '/',
+                    });
+    
+                    api.defaults.headers['Authorization'] = `Bearer ${token}`;
 
-                api.defaults.headers['Authorization'] = `Bearer ${token}`;
+                    failedRequestsQueue.forEach(request => request.onSuccess(token));
+                    failedRequestsQueue = [];
+                }).catch(err => {
+                    failedRequestsQueue.forEach(request => request.onFailure(err));
+                    failedRequestsQueue = [];
+                }).finally(()=>{
+                    isRefreshing = false;
+                });
+            }
+
+            return new Promise((resolve, reject) => {
+                failedRequestsQueue.push({
+                    onSuccess: (token:string) => {
+                        originalConfig.headers['Authorization'] = `Bearer ${token}`;
+
+                        resolve(api(originalConfig));
+                    },
+                    onFailure: (err: AxiosError) => {
+                        reject(err);
+                    },
+                })
             });
         } else {
             // deslogar usuário
